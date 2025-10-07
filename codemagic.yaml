@@ -1,0 +1,67 @@
+workflows:
+  macos_vps_247:
+    name: "macOS M4 VPS Loop Runner (auto-restart by hours)"
+    max_build_duration: 1200   # giới hạn Codemagic 2 giờ
+    instance_type: mac_mini_m2
+    environment:
+      vars:
+        LOOP_FILE: "loop.py"
+        PERSIST_PATH: "/Users/builder/.persist_data"
+        MAX_HOURS: "1.9"  # 1.9 giờ ≈ 1h54m, tự restart trước khi timeout
+      xcode: latest
+    triggering:
+      events:
+        - push
+    scripts:
+      - name: 🧱 Setup môi trường
+        script: |
+          echo "=== Setup Python và thư mục lưu data ==="
+          brew install python@3.12 || echo "Python có sẵn"
+          mkdir -p $PERSIST_PATH
+
+      - name: 🐍 Tạo file loop Python
+        script: |
+          cat > $LOOP_FILE <<'PYCODE'
+          import os, time, datetime, json, subprocess
+
+          DATA_PATH = os.environ.get("PERSIST_PATH", "/Users/builder/.persist_data")
+          LOG_FILE = os.path.join(DATA_PATH, "loop_log.json")
+          MAX_HOURS = float(os.environ.get("MAX_HOURS", "1.9"))
+          RUNTIME_LIMIT = MAX_HOURS * 3600  # quy đổi ra giây
+
+          print("🌀 VPS Loop Runner khởi động...")
+          start_time = time.time()
+          os.makedirs(DATA_PATH, exist_ok=True)
+
+          while True:
+              now = datetime.datetime.now().isoformat()
+              uptime = time.time() - start_time
+              print(f"[{now}] Hệ thống hoạt động ổn định ({uptime/3600:.2f}h).")
+
+              with open(LOG_FILE, "a") as f:
+                  f.write(json.dumps({"time": now, "status": "running", "uptime_hr": uptime/3600}) + "\n")
+
+              if uptime >= RUNTIME_LIMIT:
+                  print(f"🔁 Đã đạt giới hạn {MAX_HOURS} giờ — chuẩn bị tự khởi động lại build...")
+                  break
+
+              time.sleep(60)
+
+          token = os.environ.get("CM_API_TOKEN")
+          app_id = os.environ.get("CM_APP_ID")
+          if token and app_id:
+              print("📡 Gửi yêu cầu khởi động lại build tới Codemagic API...")
+              subprocess.call([
+                  "curl", "-X", "POST",
+                  "https://api.codemagic.io/builds",
+                  "-H", "Content-Type: application/json",
+                  "-H", f"x-auth-token: {token}",
+                  "-d", f'{{"appId":"{app_id}","workflowId":"macos_vps_247"}}'
+              ])
+          else:
+              print("⚠️ Thiếu CM_API_TOKEN hoặc CM_APP_ID — không thể tự restart.")
+          PYCODE
+
+      - name: 🚀 Chạy loop
+        script: |
+          python3 $LOOP_FILE
