@@ -1,6 +1,6 @@
 workflows:
   macos_vps_247:
-    name: "macOS VPS Loop Runner (auto-scheduler)"
+    name: "macOS VPS Loop Runner (manual/scheduled)"
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
@@ -10,12 +10,10 @@ workflows:
         MAX_HOURS: "1.8"   # 1h48m: tự kết thúc trước timeout
       xcode: latest
 
-    # ⚙️ Codemagic Scheduler: tự khởi chạy build mỗi 110 phút
+    # Chỉ để hợp lệ YAML — build khởi động khi push hoặc khi bạn bấm "Start build"
     triggering:
       events:
-        - schedule:
-            cron: "*/110 * * * *"
-            branch: main
+        - push
 
     scripts:
       - name: Setup environment
