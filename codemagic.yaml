@@ -1,25 +1,27 @@
 workflows:
   macos_vps_247:
-    name: "macOS M4 VPS Loop Runner (auto-restart by hours)"
+    name: "macOS VPS Loop Runner Auto Restart"
     max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
       vars:
         LOOP_FILE: "loop.py"
         PERSIST_PATH: "/Users/builder/.persist_data"
-        MAX_HOURS: "1.8"
+        MAX_HOURS: "0.01"  # test nhanh ~36 giây, đổi lại 1.8 khi chạy thật
         CM_API_TOKEN: Encrypted(THAY_TOKEN_TAI_DAY)
         CM_APP_ID: "68e55d53dd7c70195324202b"
         CM_WORKFLOW_ID: "macos_vps_247"
       xcode: latest
+
     triggering:
       events:
         - push
+
     scripts:
       - name: Setup environment
         script: |
-          echo "=== Setup Python and data folder ==="
-          brew install python@3.12 || echo "Python available"
+          echo "=== Setup Python and folders ==="
+          brew install python@3.12 || echo "Python already available"
           mkdir -p $PERSIST_PATH
 
       - name: Create loop script
@@ -29,7 +31,7 @@ workflows:
 
           DATA_PATH = os.environ.get("PERSIST_PATH", "/Users/builder/.persist_data")
           LOG_FILE = os.path.join(DATA_PATH, "loop_log.json")
-          MAX_HOURS = float(os.environ.get("MAX_HOURS", "1.8"))
+          MAX_HOURS = float(os.environ.get("MAX_HOURS", "0.01"))
           RUNTIME_LIMIT = MAX_HOURS * 3600
 
           print("VPS Loop Runner started...")
@@ -51,7 +53,7 @@ workflows:
                       print(f"Restarting after {MAX_HOURS}h...")
                       break
 
-                  time.sleep(60)
+                  time.sleep(10)  # kiểm tra nhanh hơn
 
           except Exception as e:
               print(f"Loop error: {e}")
