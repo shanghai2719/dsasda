@@ -1,39 +1,38 @@
 workflows:
   macos_vps_247:
     name: "macOS M4 VPS Loop Runner (auto-restart by hours)"
-    max_build_duration: 120   # giới hạn Codemagic (2 giờ)
+    max_build_duration: 120
     instance_type: mac_mini_m2
     environment:
       vars:
         LOOP_FILE: "loop.py"
         PERSIST_PATH: "/Users/builder/.persist_data"
-        MAX_HOURS: "1.8"  # restart sau 1h48m để tránh timeout
-        CM_API_TOKEN: Encrypted(THAY_TOKEN_TẠI_ĐÂY)
-        CM_APP_ID: "68e55d53dd7c70195324202b"   # thay bằng App ID của bạn
+        MAX_HOURS: "1.8"
+        CM_API_TOKEN: Encrypted(THAY_TOKEN_TAI_DAY)
+        CM_APP_ID: "68e55d53dd7c70195324202b"
         CM_WORKFLOW_ID: "macos_vps_247"
       xcode: latest
     triggering:
       events:
         - push
-
     scripts:
-      - name: 🧱 Setup môi trường
+      - name: Setup environment
         script: |
-          echo "=== Setup Python và thư mục lưu data ==="
-          brew install python@3.12 || echo "Python có sẵn"
+          echo "=== Setup Python and data folder ==="
+          brew install python@3.12 || echo "Python available"
           mkdir -p $PERSIST_PATH
 
-      - name: 🐍 Tạo file loop Python
+      - name: Create loop script
         script: |
           cat > $LOOP_FILE <<'PYCODE'
           import os, time, datetime, json, subprocess
 
           DATA_PATH = os.environ.get("PERSIST_PATH", "/Users/builder/.persist_data")
           LOG_FILE = os.path.join(DATA_PATH, "loop_log.json")
-          MAX_HOURS = float(os.environ.get("MAX_HOURS", "1.8"))  # 1.8h = ~108 phút
+          MAX_HOURS = float(os.environ.get("MAX_HOURS", "1.8"))
           RUNTIME_LIMIT = MAX_HOURS * 3600
 
-          print("🌀 VPS Loop Runner khởi động...")
+          print("VPS Loop Runner started...")
           start_time = time.time()
           os.makedirs(DATA_PATH, exist_ok=True)
 
@@ -42,30 +41,27 @@ workflows:
                   uptime = time.time() - start_time
                   now = datetime.datetime.now().isoformat()
                   remaining = RUNTIME_LIMIT - uptime
+                  print(f"[{now}] Running {uptime/3600:.2f}h (remaining {remaining/60:.1f} min).")
 
-                  print(f"[{now}] Đang chạy {uptime/3600:.2f}h (còn {remaining/60:.1f} phút).")
-
-                  # Ghi log mỗi 5 phút
                   if int(uptime) % 300 < 60:
                       with open(LOG_FILE, "a") as f:
                           f.write(json.dumps({"time": now, "uptime_hr": uptime/3600}) + "\n")
 
                   if uptime >= RUNTIME_LIMIT:
-                      print(f"🔁 Đạt giới hạn {MAX_HOURS}h → chuẩn bị restart Codemagic build...")
+                      print(f"Restarting after {MAX_HOURS}h...")
                       break
 
                   time.sleep(60)
 
           except Exception as e:
-              print(f"❌ Lỗi loop: {e}")
+              print(f"Loop error: {e}")
 
-          # === GỬI LỆNH RESTART ===
           token = os.environ.get("CM_API_TOKEN")
           app_id = os.environ.get("CM_APP_ID")
           workflow_id = os.environ.get("CM_WORKFLOW_ID", "macos_vps_247")
 
           if token and app_id:
-              print("📡 Gửi yêu cầu khởi động lại build tới Codemagic API...")
+              print("Sending restart request to Codemagic API...")
               payload = json.dumps({"appId": app_id, "workflowId": workflow_id})
               cmd = [
                   "curl", "-sS", "-X", "POST",
@@ -75,12 +71,12 @@ workflows:
                   "-d", payload
               ]
               result = subprocess.run(cmd, capture_output=True, text=True)
-              print("Phản hồi API:", result.stdout or result.stderr)
+              print("API response:", result.stdout or result.stderr)
           else:
-              print("⚠️ Thiếu CM_API_TOKEN hoặc CM_APP_ID — không thể tự restart.")
+              print("Missing CM_API_TOKEN or CM_APP_ID - cannot restart.")
           PYCODE
 
-      - name: 🚀 Chạy loop
+      - name: Run loop
         script: |
-          echo "=== Bắt đầu vòng lặp VPS ==="
+          echo "=== Starting VPS loop ==="
           python3 $LOOP_FILE
