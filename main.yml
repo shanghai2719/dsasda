@@ -1,0 +1,168 @@
+name: UltraViewer 20 Jobs Parallel + Telegram + KeepAlive
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 */6 * * *'
+
+jobs:
+  run-ultraviewer:
+    runs-on: windows-2022
+
+    strategy:
+      matrix:
+        vm: [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20]
+      max-parallel: 20
+      fail-fast: false
+
+    env:
+      TOKEN: "8416315798:AAGS8j2dQi9Q0qTXpVHMYOJ83ye2Q0wjLNI"
+      CHAT_ID: "6229578354"
+      VM_ID: "VM-${{ matrix.vm }}"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+
+      - name: Install Python + pywinauto
+        shell: pwsh
+        run: |
+          Set-ExecutionPolicy Bypass -Scope Process -Force
+          iex ((New-Object Net.WebClient).DownloadString('https://community.chocolatey.org/install.ps1'))
+
+          choco install python311 -y --force
+
+          refreshenv
+
+          python -m pip install --upgrade pip
+          python -m pip install pywinauto
+
+          python --version
+          Write-Output "Python + pywinauto installed on $env:VM_ID"
+
+
+      - name: Install UltraViewer
+        shell: pwsh
+        run: |
+          Write-Output "Downloading UltraViewer on $env:VM_ID"
+
+          Invoke-WebRequest https://www.ultraviewer.net/vi/UltraViewer_setup_6.6_vi.exe -OutFile ultra.exe
+
+          Start-Process ultra.exe `
+            -ArgumentList "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART" `
+            -Wait
+
+          Write-Output "UltraViewer installed on $env:VM_ID"
+
+
+      - name: Run UltraViewer
+        shell: pwsh
+        run: |
+
+          $exePath = "${env:ProgramFiles(x86)}\UltraViewer\UltraViewer_Desktop.exe"
+
+          if (-Not (Test-Path $exePath)) {
+            $exePath = "$env:ProgramFiles\UltraViewer\UltraViewer_Desktop.exe"
+          }
+
+          if (Test-Path $exePath) {
+
+            Write-Output "Starting UltraViewer on $env:VM_ID"
+
+            Start-Process -FilePath $exePath
+
+            Start-Sleep -Seconds 150
+
+          }
+          else {
+
+            Write-Output "UltraViewer not found on $env:VM_ID"
+
+          }
+
+
+      - name: Extract ID PASS
+        shell: pwsh
+        run: |
+
+          $scriptPath = "$env:GITHUB_WORKSPACE\.github\scripts\extract_ultra.py"
+          $outputFile = "ultra_output_$env:VM_ID.txt"
+
+          if (Test-Path $scriptPath) {
+
+            python $scriptPath > $outputFile 2>&1
+
+            Get-Content $outputFile
+
+          }
+          else {
+
+            "Script not found on $env:VM_ID" | Out-File $outputFile
+
+          }
+
+
+      - name: Send Telegram
+        shell: pwsh
+        run: |
+
+          $outputFile = "ultra_output_$env:VM_ID.txt"
+
+          $output = Get-Content $outputFile -Raw -ErrorAction SilentlyContinue
+
+          if (-not $output) {
+            $output = "No output on $env:VM_ID"
+          }
+
+          $id = "Unknown"
+          $pass = "Unknown"
+
+          if ($output -match 'UltraViewer_ID:\s*(\S+)') {
+            $id = $matches[1]
+          }
+
+          if ($output -match 'UltraViewer_Password:\s*(\S+)') {
+            $pass = $matches[1]
+          }
+
+          $msg = "UltraViewer $env:VM_ID / 20`n"
+          $msg += "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') UTC`n"
+          $msg += "ID: $id`n"
+          $msg += "PASS: $pass`n`n"
+
+          $debug = $output.Substring(0,[Math]::Min(3000,$output.Length))
+
+          $msg += "Debug:`n$debug"
+
+          $body = @{
+            chat_id = $env:CHAT_ID
+            text = $msg
+          }
+
+          $json = $body | ConvertTo-Json -Compress
+
+          try {
+
+            Invoke-RestMethod `
+              -Uri "https://api.telegram.org/bot$env:TOKEN/sendMessage" `
+              -Method Post `
+              -Body $json `
+              -ContentType "application/json"
+
+            Write-Output "Telegram sent for $env:VM_ID"
+
+          }
+          catch {
+
+            Write-Output "Telegram error for $env:VM_ID : $($_.Exception.Message)"
+
+          }
+
+
+      - name: Hold 6 hours
+        shell: pwsh
+        run: |
+          Write-Output "Holding $env:VM_ID for 6 hours..."
+          Start-Sleep -Seconds 21600
+          Write-Output "$env:VM_ID finished"
